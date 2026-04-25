@@ -509,11 +509,11 @@ if __name__ == "__main__":
     input_dim_1 = X1.shape[1]  # will now reflect the actual usable feature count
     dataset_name_1 = "Spam Email"
 
-#     results1 = run_experiment(X1, y1, input_dim_1, dataset_name_1,
-#                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
-# # No changes needed for Dataset 1 — defaults are fine
-#     plot_results(results1, dataset_name_1)
-#     all_results[dataset_name_1] = results1
+    results1 = run_experiment(X1, y1, input_dim_1, dataset_name_1,
+                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+# No changes needed for Dataset 1 — defaults are fine
+    plot_results(results1, dataset_name_1)
+    all_results[dataset_name_1] = results1
 
 
     # ── DATASET 2 ─────────────────────────────────────────────────────────────
@@ -535,13 +535,13 @@ if __name__ == "__main__":
 
 # ─────────────────────────────────────────────────────────────────────────
 
-#     results2 = run_experiment(X2, y2, input_dim_2, dataset_name_2,
-#                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=100,
-#                             hidden_dims=[256, 128, 64],
-#                             use_class_weights=True)
-# # Deeper layers, more epochs, and class weights enabled to handle imbalance
-#     plot_results(results2, dataset_name_2)
-#     all_results[dataset_name_2] = results2
+    results2 = run_experiment(X2, y2, input_dim_2, dataset_name_2,
+                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=100,
+                            hidden_dims=[256, 128, 64],
+                            use_class_weights=True)
+# Deeper layers, more epochs, and class weights enabled to handle imbalance
+    plot_results(results2, dataset_name_2)
+    all_results[dataset_name_2] = results2
 
 
     # ── DATASET 3 ─────────────────────────────────────────────────────────────
