@@ -36,6 +36,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -425,6 +426,29 @@ def preprocess_churn(df):
 
     return X, y
 
+def preprocess_ai_text(df):
+    """
+    Cleans and encodes the AI vs Human text dataset for use with the MLP.
+
+    Label in this dataset is actually a row index, not a class label.
+    Author contains the real class information: "AI" or "Human".
+    Text is converted to TF-IDF features since raw strings can't be
+    fed into the MLP directly.
+    """
+
+    # Drop the Label column — it's just a row index in this dataset
+    df = df.drop(columns=["Label"])
+
+    # Encode Author: "AI" -> 0, "Human" -> 1
+    le = LabelEncoder()
+    y = le.fit_transform(df["Author"].astype(str)).astype(np.int64)
+
+    # Convert Text to TF-IDF feature matrix
+    vectorizer = TfidfVectorizer(max_features=1000)
+    X = vectorizer.fit_transform(df["Text"].astype(str)).toarray().astype(np.float32)
+
+    return X, y
+
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 #
@@ -485,11 +509,11 @@ if __name__ == "__main__":
     input_dim_1 = X1.shape[1]  # will now reflect the actual usable feature count
     dataset_name_1 = "Spam Email"
 
-    results1 = run_experiment(X1, y1, input_dim_1, dataset_name_1,
-                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
-# No changes needed for Dataset 1 — defaults are fine
-    plot_results(results1, dataset_name_1)
-    all_results[dataset_name_1] = results1
+#     results1 = run_experiment(X1, y1, input_dim_1, dataset_name_1,
+#                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+# # No changes needed for Dataset 1 — defaults are fine
+#     plot_results(results1, dataset_name_1)
+#     all_results[dataset_name_1] = results1
 
 
     # ── DATASET 2 ─────────────────────────────────────────────────────────────
@@ -509,34 +533,15 @@ if __name__ == "__main__":
 
     df2_check = pd.read_csv("../datasets/ecommerce_customer_churn_dataset.csv")
 
-    # 1. Check class balance
-    print("\nClass balance:")
-    print(df2_check["Churned"].value_counts(normalize=True))
-
-    # 2. Check feature correlations with the label
-    print("\nFeature correlations with Churned (sorted):")
-    le_check = LabelEncoder()
-    for col in ["Gender", "Country", "City", "Signup_Quarter"]:
-        df2_check[col] = le_check.fit_transform(df2_check[col].astype(str))
-    correlations = df2_check.corr()["Churned"].drop("Churned").sort_values(ascending=False)
-    print(correlations.to_string())
-
-    # 3. Check if Churned is actually random/synthetic
-    print(f"\nUnique values in Churned: {df2_check['Churned'].unique()}")
-    print(f"Total rows: {len(df2_check)}")
-
-    # 4. Check for any NaN values
-    print(f"\nMissing values per column:")
-    print(df2_check.isnull().sum()[df2_check.isnull().sum() > 0])
 # ─────────────────────────────────────────────────────────────────────────
 
-    results2 = run_experiment(X2, y2, input_dim_2, dataset_name_2,
-                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=100,
-                            hidden_dims=[256, 128, 64],
-                            use_class_weights=True)
-# Deeper layers, more epochs, and class weights enabled to handle imbalance
-    plot_results(results2, dataset_name_2)
-    all_results[dataset_name_2] = results2
+#     results2 = run_experiment(X2, y2, input_dim_2, dataset_name_2,
+#                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=100,
+#                             hidden_dims=[256, 128, 64],
+#                             use_class_weights=True)
+# # Deeper layers, more epochs, and class weights enabled to handle imbalance
+#     plot_results(results2, dataset_name_2)
+#     all_results[dataset_name_2] = results2
 
 
     # ── DATASET 3 ─────────────────────────────────────────────────────────────
@@ -547,24 +552,17 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────────────────────────
 
     print("\nLoading Dataset 3...")
-    df3 = pd.read_csv("../datasets/spam_email_dataset.csv")                  # <-- update filename
-    label_column_3 = "label"                            # <-- update label column name
+    df3 = pd.read_csv("../datasets/ai_vs_human_dataset.csv")  # <-- update filename
 
-    # Separate features and labels (select only numeric columns for features)
-    X3 = df3.select_dtypes(include=[np.number]).drop(columns=[label_column_3], errors='ignore').values.astype(np.float32)
-    y3 = df3[label_column_3]
+    X3, y3 = preprocess_ai_text(df3)
 
-    if y3.dtype == object:
-        y3 = y3.astype("category").cat.codes.values
-    else:
-        y3 = y3.values.astype(np.int64)
+    input_dim_3 = X3.shape[1]   # will be 1000 from TF-IDF max_features
+    dataset_name_3 = "AI vs Human Text"
 
-    input_dim_3 = X3.shape[1]   # automatically set from your data
-    dataset_name_3 = "Dataset 3"
+    print(df3["Author"].value_counts(normalize=True))
 
     results3 = run_experiment(X3, y3, input_dim_3, dataset_name_3,
                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
-# No changes needed for Dataset 3 — defaults are fine
     plot_results(results3, dataset_name_3)
     all_results[dataset_name_3] = results3
 
