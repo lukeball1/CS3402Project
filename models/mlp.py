@@ -97,7 +97,8 @@ class FlexibleMLP(nn.Module):
 # to plot how performance evolves during training.
 
 def train_model(X_train, y_train, X_test, y_test, input_dim,
-                epochs=50, batch_size=64, lr=0.001):
+                hidden_dims=[128, 64], epochs=50, batch_size=64, 
+                lr=0.001, use_class_weights=False):
     """
     Trains a FlexibleMLP and returns per-epoch train/test accuracy.
 
@@ -127,9 +128,16 @@ def train_model(X_train, y_train, X_test, y_test, input_dim,
     train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     # Initialize model, loss function, and optimizer fresh for each run
-    model     = FlexibleMLP(input_dim=input_dim)
-    criterion = nn.CrossEntropyLoss()
+    model     = FlexibleMLP(input_dim=input_dim, hidden_dims=hidden_dims)
     optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    if use_class_weights:
+        class_counts  = np.bincount(y_train)
+        class_weights = torch.FloatTensor(1.0 / class_counts)
+        class_weights = class_weights / class_weights.sum()
+        criterion     = nn.CrossEntropyLoss(weight=class_weights)
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     train_accs = []
     test_accs  = []
@@ -175,7 +183,8 @@ def train_model(X_train, y_train, X_test, y_test, input_dim,
 
 def run_experiment(X, y, input_dim, dataset_name,
                     fractions=[0.1, 0.3, 0.5, 0.8, 1.0],
-                    n_repeats=3, epochs=50):
+                    n_repeats=3, epochs=50, hidden_dims=[128, 64],
+                    use_class_weights=False):
     """
     Runs the full training-size experiment for one dataset.
 
@@ -230,7 +239,10 @@ def run_experiment(X, y, input_dim, dataset_name,
             # Train and collect final-epoch accuracy for this repeat
             tr_curve, te_curve = train_model(
                 X_sub, y_sub, X_test, y_test,
-                input_dim=input_dim, epochs=epochs
+                input_dim=input_dim,
+                hidden_dims=hidden_dims,
+                epochs=epochs,
+                use_class_weights=use_class_weights
             )
 
             repeat_train_accs.append(tr_curve[-1])
@@ -377,6 +389,42 @@ def preprocess_spam_email(df):
 
     return X, y
 
+# ── DATA PREPROCESSING FOR CUSTOMER CHURN ─────────────────────────────────
+def preprocess_churn(df):
+    """
+    Cleans and encodes the customer churn dataset for use with the MLP.
+
+    Handles missing values, encodes categorical columns, and returns
+    a clean feature matrix X and label array y.
+    """
+
+    # ── Handle missing values ─────────────────────────────────────────────
+    # Fill numeric columns with the median of that column rather than 0
+    # Median is preferred over mean here because it's more robust to outliers
+    # which are common in behavioral data like session duration and credit balance
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    for col in numeric_cols:
+        if col != "Churned":
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+
+    # Fill categorical columns with the most frequent value
+    for col in ["Gender", "Country", "City", "Signup_Quarter"]:
+        most_frequent = df[col].mode()[0]
+        df[col] = df[col].fillna(most_frequent)
+    # ─────────────────────────────────────────────────────────────────────
+
+    # Encode categorical string columns
+    le = LabelEncoder()
+    for col in ["Gender", "Country", "City", "Signup_Quarter"]:
+        df[col] = le.fit_transform(df[col].astype(str))
+
+    # Separate features from label
+    X = df.drop(columns=["Churned"]).values.astype(np.float32)
+    y = df["Churned"].values.astype(np.int64)
+
+    return X, y
+
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 #
@@ -439,6 +487,7 @@ if __name__ == "__main__":
 
     results1 = run_experiment(X1, y1, input_dim_1, dataset_name_1,
                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+# No changes needed for Dataset 1 — defaults are fine
     plot_results(results1, dataset_name_1)
     all_results[dataset_name_1] = results1
 
@@ -451,23 +500,41 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────────────────────────
 
     print("\nLoading Dataset 2...")
-    df2 = pd.read_csv("../datasets/ecommerce_customer_churn_dataset.csv")                  # <-- update filename
-    label_column_2 = "label"                            # <-- update label column name
+    df2 = pd.read_csv("../datasets/ecommerce_customer_churn_dataset.csv")
+    
+    X2, y2 = preprocess_churn(df2)
 
-    # Separate features and labels (select only numeric columns for features)
-    X2 = df2.select_dtypes(include=[np.number]).drop(columns=[label_column_2], errors='ignore').values.astype(np.float32)
-    y2 = df2[label_column_2]
+    input_dim_2 = X2.shape[1]
+    dataset_name_2 = "Customer Churn"
 
-    if y2.dtype == object:
-        y2 = y2.astype("category").cat.codes.values
-    else:
-        y2 = y2.values.astype(np.int64)
+    df2_check = pd.read_csv("../datasets/ecommerce_customer_churn_dataset.csv")
 
-    input_dim_2 = X2.shape[1]   # automatically set from your data
-    dataset_name_2 = "Dataset 2"
+    # 1. Check class balance
+    print("\nClass balance:")
+    print(df2_check["Churned"].value_counts(normalize=True))
+
+    # 2. Check feature correlations with the label
+    print("\nFeature correlations with Churned (sorted):")
+    le_check = LabelEncoder()
+    for col in ["Gender", "Country", "City", "Signup_Quarter"]:
+        df2_check[col] = le_check.fit_transform(df2_check[col].astype(str))
+    correlations = df2_check.corr()["Churned"].drop("Churned").sort_values(ascending=False)
+    print(correlations.to_string())
+
+    # 3. Check if Churned is actually random/synthetic
+    print(f"\nUnique values in Churned: {df2_check['Churned'].unique()}")
+    print(f"Total rows: {len(df2_check)}")
+
+    # 4. Check for any NaN values
+    print(f"\nMissing values per column:")
+    print(df2_check.isnull().sum()[df2_check.isnull().sum() > 0])
+# ─────────────────────────────────────────────────────────────────────────
 
     results2 = run_experiment(X2, y2, input_dim_2, dataset_name_2,
-                                fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=100,
+                            hidden_dims=[256, 128, 64],
+                            use_class_weights=True)
+# Deeper layers, more epochs, and class weights enabled to handle imbalance
     plot_results(results2, dataset_name_2)
     all_results[dataset_name_2] = results2
 
@@ -496,7 +563,8 @@ if __name__ == "__main__":
     dataset_name_3 = "Dataset 3"
 
     results3 = run_experiment(X3, y3, input_dim_3, dataset_name_3,
-                                fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+                            fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
+# No changes needed for Dataset 3 — defaults are fine
     plot_results(results3, dataset_name_3)
     all_results[dataset_name_3] = results3
 
