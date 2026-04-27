@@ -183,7 +183,7 @@ def train_model(X_train, y_train, X_test, y_test, input_dim,
 # subsamples to get a stable mean +/- std estimate, as required by the project.
 
 def run_experiment(X, y, input_dim, dataset_name,
-                    fractions=[0.1, 0.3, 0.5, 0.8, 1.0],
+                    fractions=[0.1, 0.3, 0.5, 1.0],
                     n_repeats=3, epochs=50, hidden_dims=[128, 64],
                     use_class_weights=False):
     """
