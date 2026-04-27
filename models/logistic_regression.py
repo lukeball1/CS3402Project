@@ -12,7 +12,7 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.model_selection import learning_curve
 
 #Input your own path for the file!!!
-data = pd.read_csv("C:\\Users\\Zahren\\Downloads\\CS3402Project\\datasets\\ai_vs_human_dataset.csv")
+data = pd.read_csv("../datasets/ai_vs_human_dataset.csv")
 
 #Text Data
 X = data["Text"]
