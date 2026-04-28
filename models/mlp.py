@@ -37,6 +37,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -324,6 +325,98 @@ def plot_results(results, dataset_name):
     plt.show()
 
 
+# ── CONFUSION MATRIX ─────────────────────────────────────────────────────────
+#
+# Generates and saves a confusion matrix for the final trained model on each
+# dataset. Uses the 100% training fraction results since that represents the
+# model's best performance with all available data.
+
+def plot_confusion_matrix(X, y, input_dim, dataset_name, 
+                            hidden_dims=[128, 64], epochs=50,
+                            use_class_weights=False):
+    """
+    Trains a final model on 80% of the data and plots the confusion matrix
+    evaluated on the held-out 20% test set.
+
+    Args:
+        X            : full feature matrix (numpy array)
+        y            : full label array (numpy array)
+        input_dim    : number of input features
+        dataset_name : used for plot title and saved filename
+        hidden_dims  : hidden layer sizes matching the experiment config
+        epochs       : epochs matching the experiment config
+        use_class_weights : whether to use class weights in loss function
+    """
+
+    # Use the same fixed split as the experiment so results are comparable
+    scaler = StandardScaler()
+    X_train_full, X_test, y_train_full, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=RANDOM_SEED
+    )
+    X_train_full = scaler.fit_transform(X_train_full)
+    X_test       = scaler.transform(X_test)
+
+    # Train one final model on 100% of the training data
+    print(f"\n  Generating confusion matrix for {dataset_name}...")
+    tr_curve, te_curve = train_model(
+        X_train_full, y_train_full, X_test, y_test,
+        input_dim=input_dim,
+        hidden_dims=hidden_dims,
+        epochs=epochs,
+        use_class_weights=use_class_weights
+    )
+
+    # Generate predictions on the test set for the confusion matrix
+    X_te     = torch.FloatTensor(X_test)
+    model    = FlexibleMLP(input_dim=input_dim, hidden_dims=hidden_dims)
+
+    # Re-train to get the final model state
+    # (train_model returns curves but not the model itself)
+    X_tr_tensor = torch.FloatTensor(X_train_full)
+    y_tr_tensor = torch.LongTensor(y_train_full)
+    train_dataset = TensorDataset(X_tr_tensor, y_tr_tensor)
+    train_loader  = DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+    if use_class_weights:
+        class_counts  = np.bincount(y_train_full)
+        class_weights = torch.FloatTensor(1.0 / class_counts)
+        class_weights = class_weights / class_weights.sum()
+        criterion     = nn.CrossEntropyLoss(weight=class_weights)
+    else:
+        criterion = nn.CrossEntropyLoss()
+
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    model.train()
+    for epoch in range(epochs):
+        for X_batch, y_batch in train_loader:
+            optimizer.zero_grad()
+            output = model(X_batch)
+            loss   = criterion(output, y_batch)
+            loss.backward()
+            optimizer.step()
+
+    # Get final predictions
+    model.eval()
+    with torch.no_grad():
+        test_preds = model(X_te).argmax(dim=1).numpy()
+
+    # Plot confusion matrix
+    cm = confusion_matrix(y_test, test_preds)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    disp.plot(ax=ax, colorbar=False, cmap='Blues')
+    ax.set_title(f'Confusion Matrix — {dataset_name}', 
+                    fontsize=14, fontweight='bold')
+    plt.tight_layout()
+
+    filename = f"{dataset_name.replace(' ', '_')}_confusion_matrix.png"
+    plt.savefig(filename, dpi=150)
+    print(f"  Confusion matrix saved: {filename}")
+    plt.show()
+
+
 # ── SUMMARY TABLE ─────────────────────────────────────────────────────────────
 #
 # Prints a formatted comparison table across all datasets and fractions.
@@ -513,6 +606,7 @@ if __name__ == "__main__":
                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
 # No changes needed for Dataset 1 — defaults are fine
     plot_results(results1, dataset_name_1)
+    plot_confusion_matrix(X1, y1, input_dim_1, dataset_name_1)
     all_results[dataset_name_1] = results1
 
 
@@ -541,6 +635,10 @@ if __name__ == "__main__":
                             use_class_weights=True)
 # Deeper layers, more epochs, and class weights enabled to handle imbalance
     plot_results(results2, dataset_name_2)
+    plot_confusion_matrix(X2, y2, input_dim_2, dataset_name_2,
+                        hidden_dims=[256, 128, 64],
+                        epochs=100,
+                        use_class_weights=True)
     all_results[dataset_name_2] = results2
 
 
@@ -564,6 +662,7 @@ if __name__ == "__main__":
     results3 = run_experiment(X3, y3, input_dim_3, dataset_name_3,
                             fractions=FRACTIONS, n_repeats=N_REPEATS, epochs=EPOCHS)
     plot_results(results3, dataset_name_3)
+    plot_confusion_matrix(X3, y3, input_dim_3, dataset_name_3)
     all_results[dataset_name_3] = results3
 
 
